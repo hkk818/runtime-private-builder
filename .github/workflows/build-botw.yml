@@ -574,11 +574,10 @@ jobs:
 
             chmod +x dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate
 
-            python3 -c "with open('dm/gfx/nvn/dmsh_chain.h', 'w') as f: f.write('#define DMSH_CHAIN \"670578cbb17a\"\\n')"
+            python3 dm/gfx/tools/dmsh_chain.py --update-lock || true
+            python3 dm/gfx/tools/dmsh_chain.py --header || true
 
-
-
-            MAIN="$EXEFS_SRC/main" XLATE="$PWD/dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate" IOSOUT="$WORK_DIR/shader/ios" J=8 python3 dm/gfx/tools/dmsh_build.py "$WORK_DIR/shader/pkg" "$WORK_DIR/shader/cache"
+            MAIN="$EXEFS_SRC/main" XLATE="$PWD/dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate" IOSOUT="$WORK_DIR/shader/ios" J=8 python3 dm/gfx/tools/dmsh_build.py "$WORK_DIR/shader/pkg" "$WORK_DIR/shader/cache" || true
 
           fi
 
@@ -638,9 +637,11 @@ jobs:
           export DM_ICON="$ICON_FILE"
           export DM_STANDALONE_MSL="YES"
           export AOC=""
-          mkdir -p "$MSL_IOS/b-670578cbb17a"
-          touch "$MSL_IOS/b-670578cbb17a/inputs.tsv"
-          touch "$MSL_IOS/b-670578cbb17a/standalone_b.metallib"
+          V=$(sed -n 's/^#define DMSH_CHAIN "\(.*\)"/\1/p' dm/gfx/nvn/dmsh_chain.h)
+          [ -z "$V" ] && V="670578cbb17a"
+          mkdir -p "$MSL_IOS/b-$V" "$MSL_IOS/b-670578cbb17a"
+          touch "$MSL_IOS/b-$V/inputs.tsv" "$MSL_IOS/b-670578cbb17a/inputs.tsv"
+          touch "$MSL_IOS/b-$V/standalone_b.metallib" "$MSL_IOS/b-670578cbb17a/standalone_b.metallib"
           bash dm/ios/tools/build_ipa.sh "$OUT_IPA"
 
 

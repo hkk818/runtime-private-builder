@@ -404,139 +404,47 @@ jobs:
 
 
 
-          # 如果成功复用了历史着色器，但存在未翻译的新着色器（如 No-DoF 移轴去虚化 0d43a97756128f26）
 
-          if [ -d "$WORK_DIR/shader/ios" ]; then
-
-            python3 -c '
-
-            import os, glob, subprocess
-
-            work = os.environ["WORK_DIR"]
-
-            game = os.environ["GAME"]
-
-            metallibs = glob.glob(os.path.join(work, "shader", "ios", "**", "0d43a97756128f26_b.metallib"), recursive=True)
-
-            if not metallibs and game == "01006BB00C6F0000":
-
-                print("==> 检测到 No-DoF 去虚化着色器未编译，正在执行针对性快速增量编译 (0d43a97756128f26)...")
-
-                cmd1 = ["python3", "dm/gfx/tools/shader_split.py", os.environ["MINI_ROMFS"], os.path.join(os.environ["EXEFS_SRC"], "main"),
-
-                        os.path.join(work, "shader", "pkg"), os.path.join(work, "shader", "tables", "shader_map.tsv"),
-
-                        os.path.join(work, "shader", "tables", "shader_facts.tsv"), os.path.join(work, "shader", "tables", "shader_pairs.tsv")]
-
-                subprocess.run(cmd1, check=True)
-
-                import shutil
-
-                shutil.copyfile(os.path.join(work, "shader", "tables", "shader_map.tsv"), os.path.join("dm/games", game, "shader_map.tsv"))
-
-                shutil.copyfile(os.path.join(work, "shader", "tables", "shader_pairs.tsv"), os.path.join("dm/games", game, "shader_pairs.tsv"))
-
-                env = dict(os.environ, MAIN=os.path.join(os.environ["EXEFS_SRC"], "main"),
-
-                           XLATE=os.path.join(os.getcwd(), "dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate"),
-
-                           IOSOUT=os.path.join(work, "shader", "ios"), J="8")
-
-                subprocess.run(["chmod", "+x", env["XLATE"]], check=True)
-
-                subprocess.run(["python3", "dm/gfx/tools/dmsh_chain.py", "--update-lock"], check=True)
-
-                subprocess.run(["python3", "dm/gfx/tools/dmsh_chain.py", "--header"], check=True)
-
-                cmd2 = ["python3", "dm/gfx/tools/dmsh_build.py", os.path.join(work, "shader", "pkg"), os.path.join(work, "shader", "cache"), "0d43a97756128f26"]
-
-                subprocess.run(cmd2, env=env, check=True)
-
-                dirs = glob.glob(os.path.join(work, "shader", "ios", "b-*"))
-
-                if dirs:
-
-                    main_dir = max(dirs, key=lambda d: len(os.listdir(d)))
-
-                    main_ver = os.path.basename(main_dir).replace("b-", "")
-
-                    found = glob.glob(os.path.join(work, "shader", "ios", "**", "0d43a97756128f26_b.metallib"), recursive=True)
-
-                    if found and os.path.abspath(found[0]) != os.path.abspath(os.path.join(main_dir, "0d43a97756128f26_b.metallib")):
-
-                        shutil.copyfile(found[0], os.path.join(main_dir, "0d43a97756128f26_b.metallib"))
-
-                        js = found[0].replace(".metallib", ".json")
-
-                        if os.path.exists(js):
-
-                            import json
-
-                            with open(js, "r", encoding="utf-8") as jf:
-
-                                jd = json.load(jf)
-
-                            jd["chain"] = main_ver
-
-                            with open(os.path.join(main_dir, "0d43a97756128f26_b.json"), "w", encoding="utf-8") as jf:
-
-                                json.dump(jd, jf, indent=1)
-
-                    for d in dirs:
-
-                        if os.path.abspath(d) != os.path.abspath(main_dir):
-
-                            shutil.rmtree(d, ignore_errors=True)
-
-                    with open("dm/gfx/nvn/dmsh_chain.h", "w", encoding="utf-8") as f:
-
-                        f.write("#define DMSH_CHAIN " + chr(34) + main_ver + chr(34) + "\n")
-
-                    print(f"  [OK] No-DoF 0d43a97756128f26_b.metallib consolidated into {main_dir} (DMSH_CHAIN {main_ver})")'
-
-          fi
 
 
 
           # 确保 Zelda 织梦岛双通道着色器齐备
 
-          if [ "$GAME" = "01006BB00C6F0000" ] && [ -d "$WORK_DIR/shader/ios" ]; then
+          if [ "$GAME" = "01006BB00C6F0000" ]; then
 
             python3 -c '
 
-            import os, glob, shutil
-
-            work = os.environ["WORK_DIR"]
+            import os
 
             game = os.environ["GAME"]
 
-            dirs = glob.glob(os.path.join(work, "shader", "ios", "b-*"))
+            shmap_p = os.path.join("dm/games", game, "shader_map.tsv")
 
-            if dirs:
+            if os.path.exists(shmap_p):
 
-                main_dir = max(dirs, key=lambda d: len(os.listdir(d)))
+                with open(shmap_p, "r", encoding="utf-8") as f: s = f.read()
 
-                shmap_p = os.path.join("dm/games", game, "shader_map.tsv")
+                ln_orig = "ps_shader.bin\t4226\tpixel\t52fcbb4ca2a78907\t/region_common/shader/postprocess.bfsha#BNSH@0x2a6000#var0"
 
-                if os.path.exists(shmap_p):
+                ln_mod  = "ps_shader.bin\t4226\tpixel\t0d43a97756128f26\t/region_common/shader/postprocess.bfsha#BNSH@0x2a6000#var0"
 
-                    with open(shmap_p, "r", encoding="utf-8") as f: s = f.read()
+                if "52fcbb4ca2a78907" not in s: s += "\n" + ln_orig
 
-                    ln_orig = "ps_shader.bin\t4226\tpixel\t52fcbb4ca2a78907\t/region_common/shader/postprocess.bfsha#BNSH@0x2a6000#var0"
+                if "0d43a97756128f26" not in s: s += "\n" + ln_mod
 
-                    ln_mod  = "ps_shader.bin\t4226\tpixel\t0d43a97756128f26\t/region_common/shader/postprocess.bfsha#BNSH@0x2a6000#var0"
+                with open(shmap_p, "w", encoding="utf-8") as f: f.write(s)
 
-                    if "52fcbb4ca2a78907" not in s: s += "\n" + ln_orig
-
-                    if "0d43a97756128f26" not in s: s += "\n" + ln_mod
-
-                    with open(shmap_p, "w", encoding="utf-8") as f: f.write(s)
-
-                print("  [OK] Guaranteed dual-channel No-DoF shaders in Zelda bundle")
+            print("  [OK] Guaranteed dual-channel No-DoF shaders in Zelda shader_map.tsv")
 
             '
 
           fi
+
+
+
+          # 确保最终编译时 DMSH_CHAIN 准确自适应匹配目标游戏 (Zelda: eedd557a7aff, Wonder: 670578cbb17a)
+
+          python3 -c "import os; chain = 'eedd557a7aff' if os.environ.get('GAME') == '01006BB00C6F0000' else '670578cbb17a'; open('dm/gfx/nvn/dmsh_chain.h', 'w').write(f'#define DMSH_CHAIN \"{chain}\"\\n'); print(f'==> Final enforced DMSH_CHAIN: {chain}')"
 
 
 

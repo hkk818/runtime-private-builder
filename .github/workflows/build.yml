@@ -36,11 +36,11 @@ jobs:
 
       DM_GAME: "01006BB00C6F0000"
 
-      PKG_VER: "131072"
+      PKG_VER: "v131072"
 
-      MODS_LIST: "main sdk subsdk0 subsdk1 subsdk2 subsdk3 subsdk4"
+      MODS_LIST: "main subsdk0 subsdk1 sdk"
 
-      ROMFS_MARKER: "romfs/region_common/shader/postprocess.bfsha"
+      ROMFS_MARKER: "region_common/shader/postprocess.bfsha"
 
       OUT_IPA_NAME: "ZeldaLinksAwakening-shell.ipa"
 

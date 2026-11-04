@@ -643,7 +643,7 @@ jobs:
           touch "$MSL_IOS/b-670578cbb17a/standalone_b.metallib"
           bash dm/ios/tools/build_ipa.sh "$OUT_IPA"
 
-          python3 -c "import zipfile, os, shutil; ipa = os.environ['OUT_IPA']; tmp_ipa = ipa + '.clean.tmp'; zin = zipfile.ZipFile(ipa, 'r'); zout = zipfile.ZipFile(tmp_ipa, 'w', zipfile.ZIP_DEFLATED); [zout.writestr(item, zin.read(item.filename)) for item in zin.infolist() if 'Payload/DmIOS.app/romfs' not in item.filename]; zin.close(); zout.close(); shutil.move(tmp_ipa, ipa); print('Successfully stripped bundle romfs from IPA')"
+          python3 -c "import zipfile, os, sys, shutil; ipa = sys.argv[1]; tmp_ipa = ipa + '.clean.tmp'; zin = zipfile.ZipFile(ipa, 'r'); zout = zipfile.ZipFile(tmp_ipa, 'w', zipfile.ZIP_DEFLATED); [zout.writestr(item, zin.read(item.filename)) for item in zin.infolist() if 'Payload/DmIOS.app/romfs' not in item.filename]; zin.close(); zout.close(); shutil.move(tmp_ipa, ipa); print('Successfully stripped bundle romfs from IPA')" "$OUT_IPA"
 
           ls -lh "${{ github.workspace }}/final_output"
 

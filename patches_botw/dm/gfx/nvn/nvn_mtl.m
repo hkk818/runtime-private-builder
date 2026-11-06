@@ -1,5 +1,6 @@
 // Metal execution layer of the NVN null device, see nvn_mtl.h.
 #import <Metal/Metal.h>
+#include <sys/stat.h>
 #include <sys/mman.h>
 
 #pragma pack(push, 1)

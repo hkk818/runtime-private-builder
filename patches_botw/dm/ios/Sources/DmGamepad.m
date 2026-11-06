@@ -1,3 +1,6 @@
+#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
+
 // ---- Turbo & Macro Engine for Breath of the Wild ----
 void dm_macro_trigger_windbomb(void);
 void dm_macro_toggle_whistling(BOOL enable);

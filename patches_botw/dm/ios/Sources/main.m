@@ -15,6 +15,8 @@
 int dm_main(int argc, char **argv);   // dm/host/main.c compiled in with -Dmain=dm_main
 UIViewController *front_ios_root(void);
 void front_ios_focus_event(int ev);
+static char g_boot_message[640];
+const char *front_ios_boot_message(void) { return g_boot_message[0] ? g_boot_message : NULL; }
 
 static char *g_argv[4]; static int g_argc;
 
@@ -108,6 +110,7 @@ static int boot_env(void) {
     // Locate RomFS
     NSString *romfs = romfs_locate();
     if (!romfs) {
+        snprintf(g_boot_message, sizeof(g_boot_message), "未找到游戏资源 (Documents/romfs 或 Documents/romfs.img)\n请按照使用指南将资源文件拷贝至 Documents 目录。");
         fprintf(stderr, "boot: game files not found (Documents/romfs, Documents/RomFS, Documents/romfs.img or <App>/romfs)\n");
         return 0;
     }

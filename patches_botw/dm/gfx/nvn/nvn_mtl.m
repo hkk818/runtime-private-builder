@@ -3613,7 +3613,7 @@ static id<MTLLibrary> lib_from_file(NSString *path, NSError **err) {
         const void *bytes = g_spak_data + se->offset;
         size_t len = (size_t)se->size;
         t_lib_layer = memmem(bytes, len, "render_target_array_index", 25) != NULL;
-        dispatch_data_t d = dispatch_data_create(bytes, len, dispatch_get_main_queue(), DISPATCH_DATA_DESTRUCTOR_NONE);
+        dispatch_data_t d = dispatch_data_create(bytes, len, dispatch_get_main_queue(), ^{});
         id<MTLLibrary> lib = [g_dev newLibraryWithData:d error:err];
         if (lib) return lib;
     }

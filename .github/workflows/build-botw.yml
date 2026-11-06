@@ -60,6 +60,9 @@ jobs:
 
     steps:
 
+      - name: 0. Checkout repository
+        uses: actions/checkout@v4
+
       - name: 1. 
 
         run: |

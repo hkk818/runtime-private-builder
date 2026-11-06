@@ -3,6 +3,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 #import <Metal/Metal.h>
 #import <AVFAudio/AVFAudio.h>
+#import <objc/runtime.h>
 #include <stdint.h>
 #include <errno.h>
 #include "front.h"

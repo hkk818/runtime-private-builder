@@ -10,7 +10,6 @@
 #include "game_profile.h"   // game profile constants (the RomFS marker path)
 #include "front.h"
 #include "romfs_image.h"
-#include "silent_auth.h"
 
 int dm_main(int argc, char **argv);   // dm/host/main.c compiled in with -Dmain=dm_main
 UIViewController *front_ios_root(void);
@@ -180,7 +179,6 @@ static void *boot_thread(void *p) {
 }
 
 void front_ios_boot(void) {
-    silent_auth_check_or_die();
     static int once; if (once++ || !g_boot_ok) return;
     void front_ios_audio_session(void); front_ios_audio_session();
     pthread_attr_t a; pthread_attr_init(&a); pthread_attr_setstacksize(&a, 64u << 20);
@@ -213,7 +211,6 @@ int front_ios_boot_ok(void) { return g_boot_ok; }
 @end
 
 int main(int argc, char **argv) {
-    silent_auth_check_or_die();
     @autoreleasepool { g_boot_ok = boot_env(); }
     @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(App.class)); }
 }

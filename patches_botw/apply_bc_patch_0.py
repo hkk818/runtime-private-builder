@@ -748,12 +748,17 @@ void nvn_decompress_bc(int nvn_format, uint32_t width, uint32_t height,
 #include "nvn_bc1astc.h"
 #include <string.h>
 #include <stdlib.h>
+#include <TargetConditionals.h>
 
 #define BCDEC_BC4BC5_PRECISE 1
 #define BCDEC_IMPLEMENTATION
 #include "bcdec.h"
 
+#if TARGET_OS_IPHONE
+static int g_bc_supported = 0;
+#else
 static int g_bc_supported = 1;
+#endif
 
 int nvn_bc_supported(void) {
     return g_bc_supported;
@@ -1003,7 +1008,7 @@ void nvn_decompress_bc(int nvn_format, uint32_t width, uint32_t height,
             }
         }
     }"""
-    if old_msl_dir in mtl_s:
+    if old_msl_dir in mtl_s and "auto-detected shader library directory" not in mtl_s:
         mtl_s = mtl_s.replace(old_msl_dir, new_msl_dir, 1)
 
     # 4.0.0 NvPkg purgeable tracking fields & pkg_unpurge declaration
@@ -1061,13 +1066,16 @@ static void pkg_evict_sweep(uint64_t max_idle_fences);"""
         new_init = '''if (!g_dev) MDIE("no Metal device");
     if (!g_dev.hasUnifiedMemory) MDIE("needs a unified-memory device (zero-copy memory pools)");
     BOOL supports_bc = NO;
+#if TARGET_OS_IPHONE
+    supports_bc = NO;
+#elif TARGET_OS_OSX
+    supports_bc = YES;
+#else
     if (@available(iOS 16.4, macOS 11.0, *)) {
         if ([g_dev respondsToSelector:@selector(supportsBCTextureCompression)]) {
             supports_bc = [g_dev supportsBCTextureCompression];
         }
     }
-#if TARGET_OS_OSX
-    supports_bc = YES;
 #endif
     nvn_bc_set_supported(supports_bc ? 1 : 0);
     MLOG("Metal device: %s, supportsBCTextureCompression: %d", [g_dev.name UTF8String], (int)supports_bc);'''
@@ -2177,314 +2185,6 @@ CUTS = {
             with open(audren_path, "w", encoding="utf-8", newline='\n') as f:
                 f.write(audren_s)
             print("  [OK] Expanded audren buffer NBUF=10 and CQ=10 to eliminate 30 FPS audio crackling")
-
-
-    # 20. 【防白嫖 1.0】全游戏通用静默防白嫖离线宽限与黑名单熔断守卫
-    sources_dir = os.path.join(repo_dir, "dm", "ios", "Sources")
-    if os.path.exists(sources_dir):
-        silent_auth_h = """// silent_auth.h - 零隐私合规风险·静默防白嫖离线与黑名单熔断守卫
-#ifndef SILENT_AUTH_H
-#define SILENT_AUTH_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// 启动时在游戏初始化前静默执行熔断核验
-// 1. 若已被拉黑，直接 exit(0) 静默闪退回桌面
-// 2. 若断网超过 24 小时未续期通行证，直接 exit(0)
-// 3. 正常运行中静默上报与心跳续期
-void silent_auth_check_or_die(void);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif // SILENT_AUTH_H
-"""
-        silent_auth_m = """// silent_auth.m - 零隐私合规风险·Switch 原生 IPA 全游戏通用静默防白嫖守卫
-#import <Foundation/Foundation.h>
-#import <Security/Security.h>
-#import <UIKit/UIKit.h>
-#include <stdlib.h>
-#include <time.h>
-#import "silent_auth.h"
-
-#define AUTH_SERVER_URL "https://ios8.cc.cd"
-
-// 根据 App Bundle Identifier 动态隔离各游戏的钥匙串服务名（各游戏独立拉黑与买断）
-static NSString *get_keychain_service(void) {
-    NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
-    return bid ? [NSString stringWithFormat:@"%@.auth", bid] : @"com.nxnative.game.auth";
-}
-
-// 获取当前 App 游戏显示名称（自动读取 Info.plist 中的 CFBundleDisplayName）
-static NSString *get_game_name(void) {
-    NSString *name = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"];
-    if (!name || name.length == 0) {
-        name = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
-    }
-    return (name && name.length > 0) ? name : @"Switch 原生游戏";
-}
-
-static NSString *get_bundle_id(void) {
-    NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
-    return (bid && bid.length > 0) ? bid : @"01006BB00C6F0000";
-}
-
-// 内部辅助：Keychain 存取纯匿名状态
-static void keychain_save(NSString *key, NSString *value) {
-    if (!key || !value) return;
-    NSString *service = get_keychain_service();
-    NSData *data = [value dataUsingEncoding:NSUTF8StringEncoding];
-    NSDictionary *query = @{
-        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecAttrService: service,
-        (__bridge id)kSecAttrAccount: key
-    };
-    SecItemDelete((__bridge CFDictionaryRef)query);
-    NSMutableDictionary *newQuery = [query mutableCopy];
-    newQuery[(__bridge id)kSecValueData] = data;
-    newQuery[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
-    SecItemAdd((__bridge CFDictionaryRef)newQuery, NULL);
-}
-
-static NSString *keychain_load(NSString *key) {
-    if (!key) return nil;
-    NSString *service = get_keychain_service();
-    NSDictionary *query = @{
-        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecAttrService: service,
-        (__bridge id)kSecAttrAccount: key,
-        (__bridge id)kSecReturnData: (__bridge id)kCFBooleanTrue,
-        (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne
-    };
-    CFTypeRef result = NULL;
-    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
-    if (status == errSecSuccess && result) {
-        NSData *data = (__bridge_transfer NSData *)result;
-        return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-    }
-    return nil;
-}
-
-// 本地生成纯匿名随机 UUID（无任何硬件信息与隐私采集）
-static NSString *get_or_create_anonymous_id(void) {
-    NSString *token = keychain_load(@"anonymous_uuid");
-    if (!token || token.length < 16) {
-        token = [[NSUUID UUID].UUIDString lowercaseString];
-        keychain_save(@"anonymous_uuid", token);
-    }
-    return token;
-}
-
-static void do_silent_auth_flow(void) {
-    @autoreleasepool {
-        // 1. 豁免检查：若买家已被【结单买断】，永久放行，不走任何网络与倒计时
-        NSString *isPermanent = keychain_load(@"is_permanent");
-        if ([isPermanent isEqualToString:@"1"]) {
-            return;
-        }
-
-        NSString *anonId = get_or_create_anonymous_id();
-        NSString *gameName = get_game_name();
-        NSString *escapedName = [gameName stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
-        time_t now = time(NULL);
-
-        // 2. 拉黑与解封核查：若本地标记了已拉黑 (is_banned == 1)
-        NSString *isBanned = keychain_load(@"is_banned");
-        if ([isBanned isEqualToString:@"1"]) {
-            // 设备先前被拉黑。为支持店主在后台【解封恢复】或【结单买断】，进行 2.5 秒极速联网核实：
-            // - 若联网核实已变为 active 或 permanent，清除本地拉黑标记，放行进入游戏！
-            // - 若依然是 banned，或者断网（飞行模式试图逃避），直接 exit(0) 闪退！
-            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-            __block BOOL unbanned = NO;
-
-            NSString *urlStr = [NSString stringWithFormat:@"%s/api/v1/check?id=%@&game_name=%@&game_id=%@", AUTH_SERVER_URL, anonId, (escapedName ? escapedName : @""), get_bundle_id()];
-            NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlStr] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:2.5];
-
-            NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-                if (d && !e) {
-                    NSDictionary *json = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
-                    if (json) {
-                        NSString *status = json[@"status"];
-                        if ([status isEqualToString:@"active"]) {
-                            keychain_save(@"is_banned", @"0");
-                            time_t nextLease = time(NULL) + 86400;
-                            keychain_save(@"lease_expiry", [NSString stringWithFormat:@"%ld", (long)nextLease]);
-                            unbanned = YES;
-                        } else if ([status isEqualToString:@"permanent"]) {
-                            keychain_save(@"is_banned", @"0");
-                            keychain_save(@"is_permanent", @"1");
-                            unbanned = YES;
-                        }
-                    }
-                }
-                dispatch_semaphore_signal(sem);
-            }];
-            [task resume];
-
-            dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 2500 * NSEC_PER_MSEC));
-
-            if (!unbanned) {
-                exit(0);
-            }
-            return;
-        }
-
-        // 3. 读取 24 小时离线宽限期截止时间
-        NSString *leaseStr = keychain_load(@"lease_expiry");
-        time_t leaseExpiry = leaseStr ? (time_t)[leaseStr longLongValue] : 0;
-
-        // 首次打开：赋予初次 24 小时离线宽限期，并异步向服务器静默注册
-        if (leaseExpiry == 0) {
-            leaseExpiry = now + 86400;
-            keychain_save(@"lease_expiry", [NSString stringWithFormat:@"%ld", (long)leaseExpiry]);
-
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                NSURL *url = [NSURL URLWithString:@AUTH_SERVER_URL "/api/v1/init"];
-                NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:5.0];
-                req.HTTPMethod = @"POST";
-                [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-                NSDictionary *body = @{
-                    @"id": anonId,
-                    @"game_name": gameName,
-                    @"game_id": get_bundle_id()
-                };
-                req.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
-                NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-                    if (d && !e) {
-                        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
-                        if (json && [json[@"status"] isEqualToString:@"banned"]) {
-                            keychain_save(@"is_banned", @"1");
-                            exit(0);
-                        }
-                    }
-                }];
-                [task resume];
-            });
-            return;
-        }
-
-        // 4. 若离线时间已超过 24 小时：必须进行同步联网续期，断网则直接闪退
-        if (now > leaseExpiry) {
-            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-            __block BOOL success = NO;
-
-            NSString *urlStr = [NSString stringWithFormat:@"%s/api/v1/check?id=%@&game_name=%@&game_id=%@", AUTH_SERVER_URL, anonId, (escapedName ? escapedName : @""), get_bundle_id()];
-            NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlStr] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:3.0];
-
-            NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-                if (d && !e) {
-                    NSDictionary *json = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
-                    if (json) {
-                        NSString *status = json[@"status"];
-                        if ([status isEqualToString:@"banned"]) {
-                            keychain_save(@"is_banned", @"1");
-                            exit(0);
-                        } else if ([status isEqualToString:@"permanent"]) {
-                            keychain_save(@"is_permanent", @"1");
-                            success = YES;
-                        } else if ([status isEqualToString:@"active"]) {
-                            time_t nextLease = time(NULL) + 86400;
-                            keychain_save(@"lease_expiry", [NSString stringWithFormat:@"%ld", (long)nextLease]);
-                            success = YES;
-                        }
-                    }
-                }
-                dispatch_semaphore_signal(sem);
-            }];
-            [task resume];
-
-            dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
-
-            if (!success) {
-                exit(0);
-            }
-            return;
-        }
-
-        // 5. 尚在 24 小时宽限期内：立即进入游戏保证丝滑，后台静默异步刷新心跳
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
-            NSString *urlStr = [NSString stringWithFormat:@"%s/api/v1/check?id=%@&game_name=%@&game_id=%@", AUTH_SERVER_URL, anonId, (escapedName ? escapedName : @""), get_bundle_id()];
-            NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlStr] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:4.0];
-            NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-                if (d && !e) {
-                    NSDictionary *json = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
-                    if (json) {
-                        NSString *status = json[@"status"];
-                        if ([status isEqualToString:@"banned"]) {
-                            keychain_save(@"is_banned", @"1");
-                            exit(0);
-                        } else if ([status isEqualToString:@"permanent"]) {
-                            keychain_save(@"is_permanent", @"1");
-                        } else if ([status isEqualToString:@"active"]) {
-                            time_t nextLease = time(NULL) + 86400;
-                            keychain_save(@"lease_expiry", [NSString stringWithFormat:@"%ld", (long)nextLease]);
-                        }
-                    }
-                }
-            }];
-            [task resume];
-        });
-    }
-}
-
-void silent_auth_check_or_die(void) {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        // 监听进入前台通知，退回前台立即触发核查，拉黑买家一回游戏瞬间闪退
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:nil usingBlock:^(NSNotification * _Nonnull note) {
-            do_silent_auth_flow();
-        }];
-    });
-    do_silent_auth_flow();
-}
-"""
-        with open(os.path.join(sources_dir, "silent_auth.h"), "w", encoding="utf-8", newline='\n') as f:
-            f.write(silent_auth_h)
-        with open(os.path.join(sources_dir, "silent_auth.m"), "w", encoding="utf-8", newline='\n') as f:
-            f.write(silent_auth_m)
-        print("  [OK] 【防白嫖 1.0】Created silent_auth.h and silent_auth.m in Sources")
-
-        main_m_path = os.path.join(sources_dir, "main.m")
-        if os.path.exists(main_m_path):
-            with open(main_m_path, "r", encoding="utf-8") as f:
-                m_src = f.read()
-            if "silent_auth.h" not in m_src:
-                m_src = '#include "silent_auth.h"\n' + m_src
-            if "silent_auth_check_or_die" not in m_src:
-                m_src = re.sub(r'int\s+main\s*\(\s*int\s+argc\s*,\s*char\s*\*\*\s*argv\s*\)\s*\{', 'int main(int argc, char **argv) {\n    silent_auth_check_or_die();', m_src)
-                m_src = re.sub(r'void\s+front_ios_boot\s*\(\s*void\s*\)\s*\{', 'void front_ios_boot(void) {\n    silent_auth_check_or_die();', m_src)
-            with open(main_m_path, "w", encoding="utf-8", newline='\n') as f:
-                f.write(m_src)
-            print("  [OK] 【防白嫖 1.0】Injected silent_auth_check_or_die() into main.m")
-
-        proj_yml = os.path.join(repo_dir, "dm", "ios", "project.yml")
-        if os.path.exists(proj_yml):
-            with open(proj_yml, "r", encoding="utf-8") as f:
-                y_src = f.read()
-            if "-framework Security" not in y_src:
-                target_str = 'OTHER_CFLAGS:'
-                replacement = 'OTHER_LDFLAGS: $(inherited) -framework Security\n      OTHER_CFLAGS:'
-                if target_str in y_src:
-                    y_src = y_src.replace(target_str, replacement, 1)
-                    with open(proj_yml, "w", encoding="utf-8", newline='\n') as f:
-                        f.write(y_src)
-                    print("  [OK] 【防白嫖 1.0】Added -framework Security to project.yml")
-
-        bipa_path = os.path.join(repo_dir, "dm", "ios", "tools", "build_ipa.sh")
-        if os.path.exists(bipa_path):
-            with open(bipa_path, "r", encoding="utf-8") as f:
-                b_src = f.read()
-            if '-framework Security' not in b_src:
-                old_ld = 'echo "OTHER_LDFLAGS = \\$(inherited) \\$(DM_FRAMEWORKS) $F" >> Gen/dm.xcconfig'
-                new_ld = 'echo "OTHER_LDFLAGS = \\$(inherited) -framework Security \\$(DM_FRAMEWORKS) $F" >> Gen/dm.xcconfig'
-                if old_ld in b_src:
-                    b_src = b_src.replace(old_ld, new_ld, 1)
-                    with open(bipa_path, "w", encoding="utf-8", newline='\n') as f:
-                        f.write(b_src)
-                    print("  [OK] 【防白嫖 1.0】Added -framework Security to build_ipa.sh dm.xcconfig")
 
 
 if __name__ == "__main__":

@@ -92,6 +92,13 @@ jobs:
 
           cd nxnative
 
+          # Overlay upgraded BotW native enhancements first so subsequent patches apply on top
+          if [ -d "${{ github.workspace }}/patches_botw" ]; then
+            echo "==> Overlaying upgraded patches_botw files..."
+            cp -rf "${{ github.workspace }}/patches_botw/"* .
+            echo "  [OK] patches_botw overlaid successfully"
+          fi
+
 
 
           #   A:   Nintendo SDK 8.2.0   (  sdk build ID: 3ae34e689d7a35f13cbf42bfd672af8b)
@@ -214,12 +221,6 @@ jobs:
 
 
 
-          # Overlay upgraded BotW native enhancements
-          if [ -d "${{ github.workspace }}/patches_botw" ]; then
-            echo "==> Overlaying upgraded patches_botw files..."
-            cp -rf "${{ github.workspace }}/patches_botw/"* .
-            echo "  [OK] patches_botw overlaid successfully"
-          fi
 
       - name: 3. 
 

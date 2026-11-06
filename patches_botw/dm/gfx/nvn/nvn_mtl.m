@@ -81,12 +81,16 @@ static const spak_entry_t *spak_find(const char *name) {
 #include <TargetConditionals.h>
 #if TARGET_OS_IPHONE
 #include <os/proc.h>   // os_proc_available_memory: for the memory readout line
+#include <malloc/malloc.h>
 #endif
 #include "nvn_mtl.h"
 #include "nvn_obj.h"
 #include "../tex/nvn_fmt_mtl.h"
 #include "../tex/nvn_deswizzle.h"
 #include "../tex/nvn_deswizzle_gpu.h"
+#include "../tex/nvn_bc_dec.h"
+#include "../tex/nvn_bc1astc.h"
+#include "../tex/nvn_bctc_gpu.h"
 #include "nvn_builtin.h"
 #include "nvn_dirty.h"
 #include "nvn_depth_clear.h"
@@ -423,6 +427,20 @@ void mtl_init(void) {
     g_dev = MTLCreateSystemDefaultDevice();
     if (!g_dev) MDIE("no Metal device");
     if (!g_dev.hasUnifiedMemory) MDIE("needs a unified-memory device (zero-copy memory pools)");
+    BOOL supports_bc = NO;
+#if TARGET_OS_IPHONE
+    supports_bc = NO;
+#elif TARGET_OS_OSX
+    supports_bc = YES;
+#else
+    if (@available(iOS 16.4, macOS 11.0, *)) {
+        if ([g_dev respondsToSelector:@selector(supportsBCTextureCompression)]) {
+            supports_bc = [g_dev supportsBCTextureCompression];
+        }
+    }
+#endif
+    nvn_bc_set_supported(supports_bc ? 1 : 0);
+    MLOG("Metal device: %s, supportsBCTextureCompression: %d", [g_dev.name UTF8String], (int)supports_bc);
     g_q = [g_dev newCommandQueue];
     // A device without Metal 4 (the paravirtualized GPU of a virtual Mac, such as GitHub's macos-26 runner: no residency set, no MTL4CommandQueue) cannot run the NVN layer. The GL and
     // Vulkan layers draw on classic queues of their own and need only the device (mtl_device_classic): there the classic part starts and presents are dropped, which is all a
@@ -491,6 +509,7 @@ void mtl_init(void) {
     g_ev = [g_dev newSharedEvent];
     g_keep = [NSMutableArray array];
     g_nvn_deswz_gpu = nvn_deswz_gpu_init(g_dev) == 0;
+    nvn_bctc_gpu_init(g_dev);
     dm_res_report_register(mtl_res_counts);
     if (!g_nvn_deswz_gpu) MLOG("[RED] GPU deswizzle init failed; swizzled textures fall back to the CPU");
     MLOG("Metal device %s", g_dev.name.UTF8String);
@@ -1715,6 +1734,29 @@ static void alias_take_over(const alias_key *nk) {
     }
     if (n) { g_ser_gen++; g_alias_taken += n; }
 }
+static void alias_trim_idle_orphans(uint64_t max_idle_fences) {
+    if (!g_alias.cap) return;
+    uint32_t n = 0;
+    alias_key ks[128];
+    for (uint32_t i = 0; i < g_alias.cap && n < 128; i++) {
+        if (!g_alias.vals[i]) continue;
+        if (serial_holds(&g_by_serial, (__bridge id)g_alias.vals[i])) continue;
+        if (serial_holds(&g_ghost, (__bridge id)g_alias.vals[i])) continue;
+        alias_key k; memcpy(&k, g_alias.keys + (size_t)i * g_alias.klen, sizeof k);
+        uint64_t seen = (uint64_t)(uintptr_t)nvn_hm_get(&g_alias_seen, &k);
+        if (seen && g_fence + 1 > seen && (g_fence + 1 - seen) < max_idle_fences) continue;
+        ks[n++] = k;
+    }
+    for (uint32_t j = 0; j < n; j++) {
+        void *old = nvn_hm_del(&g_alias, &ks[j]);
+        if (!old) continue;
+        nvn_hm_del(&g_alias_seen, &ks[j]);
+        id o = CFBridgingRelease(old);
+        if (g_alias_set) CFSetRemoveValue(g_alias_set, (__bridge const void *)o);
+        defer_obj_release(o);
+    }
+    if (n) { g_ser_gen++; g_alias_taken += n; }
+}
 static __unsafe_unretained id serial_get(uint64_t k) { pthread_mutex_lock(&g_smu); __unsafe_unretained id o = hm_get_id(&g_by_serial, &k); pthread_mutex_unlock(&g_smu); return o; }
 static void serial_put(uint64_t k, id o) { pthread_mutex_lock(&g_smu); id old = hm_get_id(&g_by_serial, &k); if (old) { if (alias_has(old)) defer_obj_unref(old); else defer_obj_release(old); } hm_put_id(&g_by_serial, &k, o); g_ser_gen++; pthread_mutex_unlock(&g_smu); }
 static void serial_del(uint64_t k) { pthread_mutex_lock(&g_smu); id old = hm_get_id(&g_by_serial, &k); if (old) { if (alias_has(old)) defer_obj_unref(old); else defer_obj_release(old); hm_del_id(&g_by_serial, &k); g_ser_gen++; } pthread_mutex_unlock(&g_smu); }   // nothing to drop: the texture ID caches stay valid
@@ -1754,11 +1796,14 @@ static void tex_put(uint64_t k, id o) {   // serials from 2^62 up are external t
 // Host record of a packaged texture: the current MTLTexture, the upload stamp, and the global write generation at the last check
 // spare: the texture the last re-upload replaced, kept resident and written by the next re-upload once the GPU has passed spare_fence (a texture the CPU rewrites every frame, a movie frame,
 // alternates between two textures instead of allocating one per frame: Link's Awakening's title movie made and freed an 8 MB texture a frame)
-@interface NvPkg : NSObject { @public id<MTLTexture> tex, spare, view; uint64_t stamp, seen, hash, spare_fence, vgen, vseen; const void *span; int sparse, vbase; uint8_t *edge[2]; uint32_t edge_n[2]; } @end   // hash: full hash of the uploaded content under DM_NVN_DIRTYCHECK; span: its tracked range (nvn_dirty_span, NULL = untracked);
+@interface NvPkg : NSObject { @public id<MTLTexture> tex, spare, view; uint64_t stamp, seen, hash, spare_fence, vgen, vseen; const void *span; int sparse, vbase; uint8_t *edge[2]; uint32_t edge_n[2]; uint64_t used; int vol, lost, owned; } @end
+static void pkg_unpurge(NvPkg *pk, const tex_t *t);
+static void pkg_purge_idle(uint64_t max_idle_fences);
+static void pkg_evict_sweep(uint64_t max_idle_fences);   // hash: full hash of the uploaded content under DM_NVN_DIRTYCHECK; span: its tracked range (nvn_dirty_span, NULL = untracked);
 // sparse: in a sparse virtual pool, read through its page table (hle_nvn.c nvn_sparse_*), vgen the page table's generation at the upload and vseen at the last look; view: what it is bound as (sparse_view)
 // edge: the uploaded bytes of the storage's first and last host pages where other data shares them (pkg_edges_take)
 @implementation NvPkg
-- (void)dealloc { res_remove(tex); if (spare) res_remove(spare); free(edge[0]); free(edge[1]); }
+- (void)dealloc { if (tex) res_remove(tex); if (spare) res_remove(spare); free(edge[0]); free(edge[1]); }
 @end
 static uint64_t g_pkg_uploads, g_pkg_reuploads, g_pkg_miss, g_pkg_edge_skips;
 static uint64_t g_pfv_upgrades;
@@ -2173,14 +2218,25 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
         if (sparse) nvn_sparse_protect(t->pool, (uint64_t)(uintptr_t)t->mem, t->L.size); else nvn_dirty_protect(t->mem, t->L.size); }
     int bw, bh, bpb = nvn_fmt_bpb(t->d.format, &bw, &bh);
     unsigned layers = (t->d.target == 4 || t->d.target == 9) ? t->d.depth : t->d.target == 8 ? 6 : t->d.target == 3 ? t->d.height : 1;   // a cube array's depth counts layer-faces (tex_desc)
+    int decompress_bc = !nvn_bc_supported() && nvn_is_bc_format(t->d.format);
+    int is_bc1_astc = decompress_bc && nvn_bc1_astc_enabled() && nvn_is_bc1_format(t->d.format);
+    int dst_bpp = decompress_bc ? nvn_bc_bytes_per_pixel(t->d.format) : bpb;
     size_t total = 0;
     for (unsigned l = 0; l < d.mipmapLevelCount; l++) {
         uint32_t w = MAX(t->d.width >> l, 1u), h = MAX(t->d.height >> l, 1u), z = t->d.target == 2 ? MAX(t->d.depth >> l, 1u) : 1;
-        total += (size_t)((w + bw - 1) / bw) * bpb * ((h + bh - 1) / bh) * z * layers;
+        if (is_bc1_astc) {
+            size_t astc_pitch = (size_t)((w + 3) / 4) * 16;
+            size_t astc_rows = (h + 3) / 4;
+            total += astc_pitch * astc_rows * z * layers;
+        } else if (decompress_bc) {
+            total += (size_t)w * dst_bpp * h * z * layers;
+        } else {
+            total += (size_t)((w + bw - 1) / bw) * bpb * ((h + bh - 1) / bh) * z * layers;
+        }
     }
     g_bp_up_bytes += total;
     void *mb; uint64_t mo;
-    int use_gpu = !sparse && g_nvn_deswz_gpu && mtl_addr((uint64_t)t->mem, t->L.size, &mb, &mo);   // a sparse pool's texture is gathered through its page table on the CPU
+    int use_gpu = !decompress_bc && !sparse && g_nvn_deswz_gpu && mtl_addr((uint64_t)t->mem, t->L.size, &mb, &mo);   // a sparse pool's texture is gathered through its page table on the CPU
     if (g_nvn_deswz_gpu && !use_gpu && !sparse) RED_ONCE(40, "swizzled texture storage is not in a memory pool; falling back to the CPU");
     if (use_gpu) {
         // The GPU reads the memory pool at execution time, which is closer to a real Switch than a snapshot at CPU upload time; the dirty-page stamp is still taken before encoding, and later writes still trigger a re-upload.
@@ -2221,14 +2277,78 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
     int zb = zblock_on() && t->d.format >= 0x79 && t->d.format <= 0x94; if (zb) { g_zb_ser = t->serial; g_zb_n = (int)MIN(d.mipmapLevelCount, 16u); memset(g_zb, 0, sizeof g_zb); memset(g_zb_tot, 0, sizeof g_zb_tot); }
     for (unsigned l = 0; l < d.mipmapLevelCount; l++) {
         uint32_t w = MAX(t->d.width >> l, 1u), h = MAX(t->d.height >> l, 1u), z = t->d.target == 2 ? MAX(t->d.depth >> l, 1u) : 1;
-        size_t pitch = (size_t)((w + bw - 1) / bw) * bpb, rows = (h + bh - 1) / bh;
-        for (unsigned y = 0; y < layers; y++) {
-            if (nvn_deswizzle(&t->d, l, y, src, (uint8_t *)stg.contents + off, pitch)) { RED_ONCE(9, "deswizzle failed format %#x target %d", t->d.format, t->d.target); break; }
-            if (zb && l < 16) { const uint64_t *q = (const uint64_t *)((const uint8_t *)stg.contents + off); size_t nb = pitch * rows * z / 16;
-                for (size_t i = 0; i < nb; i++) g_zb[l] += !(q[2 * i] | q[2 * i + 1]);
-                g_zb_tot[l] += (uint32_t)nb; }
-            up_blit_add(stg, off, pitch, pitch * rows, MTLSizeMake(w, h, z), mt, y, l);
-            off += pitch * rows * z;
+        if (is_bc1_astc) {
+            size_t bc_pitch = (size_t)((w + bw - 1) / bw) * bpb;
+            size_t bc_rows = (h + bh - 1) / bh;
+            size_t bc_slice = bc_pitch * bc_rows;
+            size_t bc_size = bc_slice * z;
+            uint8_t *bc_tmp = (uint8_t *)malloc(bc_size ? bc_size : 16);
+            size_t astc_pitch = (size_t)((w + 3) / 4) * 16;
+            size_t astc_rows = (h + 3) / 4;
+            size_t astc_slice = astc_pitch * astc_rows;
+            for (unsigned y = 0; y < layers; y++) {
+                if (nvn_deswizzle(&t->d, l, y, src, bc_tmp, bc_pitch)) {
+                    RED_ONCE(9, "deswizzle failed format %#x target %d", t->d.format, t->d.target);
+                    break;
+                }
+                for (uint32_t s = 0; s < z; s++) {
+                    const void *src_bc = bc_tmp + s * bc_slice;
+                    void *dst_astc = (uint8_t *)stg.contents + off + s * astc_slice;
+                    nvn_bc1_to_astc4x4(w, h, src_bc, bc_pitch, dst_astc, astc_pitch);
+                }
+                up_blit_add(stg, off, astc_pitch, astc_slice, MTLSizeMake(w, h, z), mt, y, l);
+                off += astc_slice * z;
+            }
+            free(bc_tmp);
+        } else if (decompress_bc) {
+            size_t bc_pitch = (size_t)((w + bw - 1) / bw) * bpb;
+            size_t bc_rows = (h + bh - 1) / bh;
+            size_t bc_slice = bc_pitch * bc_rows;
+            size_t bc_size = bc_slice * z;
+            size_t decomp_pitch = (size_t)w * dst_bpp;
+            size_t decomp_slice = decomp_pitch * h;
+            int use_gpu_bc = nvn_bctc_gpu_supported() && (t->d.format == 0x44 || t->d.format == 0x48 || t->d.format == 0x49 || t->d.format == 0x4A || t->d.format == 0x4B || t->d.format == 0x4C || t->d.format == 0x4D || t->d.format == 0x4E);
+            id<MTLBuffer> bc_buf = nil;
+            uint8_t *bc_cpu = NULL;
+            if (use_gpu_bc) {
+                bc_buf = [g_dev newBufferWithLength:bc_size ? bc_size : 16 options:MTLResourceStorageModeShared];
+                res_add(bc_buf);
+                [g_up_keep addObject:bc_buf];
+            } else {
+                bc_cpu = (uint8_t *)malloc(bc_size ? bc_size : 16);
+            }
+            for (unsigned y = 0; y < layers; y++) {
+                void *bc_dst = use_gpu_bc ? bc_buf.contents : (void *)bc_cpu;
+                if (nvn_deswizzle(&t->d, l, y, src, bc_dst, bc_pitch)) {
+                    RED_ONCE(9, "deswizzle failed format %#x target %d", t->d.format, t->d.target);
+                    break;
+                }
+                for (uint32_t s = 0; s < z; s++) {
+                    if (use_gpu_bc) {
+                        size_t poff; id<MTLBuffer> pbuf = up_param_alloc(&poff);
+                        nvn_bctc_gpu_encode_m4(g_up_ce, g_up_ct, pbuf, poff, t->d.format, w, h,
+                                               bc_buf, s * bc_slice, bc_pitch,
+                                               stg, off + s * decomp_slice, decomp_pitch);
+                    } else {
+                        const void *src_bc = bc_cpu + s * bc_slice;
+                        void *dst_px = (uint8_t *)stg.contents + off + s * decomp_slice;
+                        nvn_decompress_bc(t->d.format, w, h, src_bc, bc_pitch, dst_px, decomp_pitch);
+                    }
+                }
+                up_blit_add(stg, off, decomp_pitch, decomp_slice, MTLSizeMake(w, h, z), mt, y, l);
+                off += decomp_slice * z;
+            }
+            if (bc_cpu) free(bc_cpu);
+        } else {
+            size_t pitch = (size_t)((w + bw - 1) / bw) * bpb, rows = (h + bh - 1) / bh;
+            for (unsigned y = 0; y < layers; y++) {
+                if (nvn_deswizzle(&t->d, l, y, src, (uint8_t *)stg.contents + off, pitch)) { RED_ONCE(9, "deswizzle failed format %#x target %d", t->d.format, t->d.target); break; }
+                if (zb && l < 16) { const uint64_t *q = (const uint64_t *)((const uint8_t *)stg.contents + off); size_t nb = pitch * rows * z / 16;
+                    for (size_t i = 0; i < nb; i++) g_zb[l] += !(q[2 * i] | q[2 * i + 1]);
+                    g_zb_tot[l] += (uint32_t)nb; }
+                up_blit_add(stg, off, pitch, pitch * rows, MTLSizeMake(w, h, z), mt, y, l);
+                off += pitch * rows * z;
+            }
         }
     }
     free(part);
@@ -2339,6 +2459,57 @@ static int tex_init_fill(const tex_t *t, id<MTLTexture> mt) {
     static uint64_t n[3]; if (n[why]++ < 4) MLOG("initial content: ser=%llu %ux%ux%u format %#x filled from its storage, %s (%llu so far)", (unsigned long long)t->serial, t->d.width, t->d.height, t->d.depth, t->d.format,
                                                  (const char *[]){"a CPU_NO_ACCESS pool's", "a CPU_UNCACHED pool's", "flushed by the CPU before its first use"}[why], (unsigned long long)n[why]);
     return 1;
+}
+
+static uint64_t g_purge_marked, g_purge_marked_mb;
+static void pkg_purge_idle(uint64_t max_idle_fences) {
+    if (!g_by_serial.cap) return;
+    uint32_t k = 0; uint64_t bytes = 0;
+    for (uint32_t i = 0; i < g_by_serial.cap; i++) {
+        if (!g_by_serial.vals[i]) continue;
+        __unsafe_unretained id o = (__bridge id)g_by_serial.vals[i];
+        if (!o || ![o isKindOfClass:[NvPkg class]]) continue;
+        NvPkg *pk = (NvPkg *)o;
+        if (!pk->tex || pk->vol || pk->owned || (g_fence + 1 > pk->used && (g_fence + 1 - pk->used) < max_idle_fences)) continue;
+        [pk->tex setPurgeableState:MTLPurgeableStateVolatile];
+        pk->vol = 1;
+        k++;
+        bytes += pk->tex.allocatedSize;
+    }
+    if (k) {
+        g_purge_marked += k;
+        g_purge_marked_mb += (bytes >> 20);
+    }
+}
+static void pkg_evict_sweep(uint64_t max_idle_fences) {
+    if (!g_by_serial.cap) return;
+    for (uint32_t i = 0; i < g_by_serial.cap; i++) {
+        if (!g_by_serial.vals[i]) continue;
+        __unsafe_unretained id o = (__bridge id)g_by_serial.vals[i];
+        if (!o || ![o isKindOfClass:[NvPkg class]]) continue;
+        NvPkg *pk = (NvPkg *)o;
+        if (!pk->tex || pk->owned || (g_fence + 1 > pk->used && (g_fence + 1 - pk->used) < max_idle_fences)) continue;
+        id<MTLTexture> old = pk->tex;
+        pk->tex = nil;
+        pk->vol = 0;
+        pk->lost = 1;
+        defer_obj_release(old);
+    }
+}
+static void pkg_unpurge(NvPkg *pk, const tex_t *t) {
+    pk->vol = 0;
+    int lost = pk->lost; pk->lost = 0;
+    if (!lost && pk->tex && [pk->tex setPurgeableState:MTLPurgeableStateNonVolatile] != MTLPurgeableStateEmpty) {
+        return;
+    }
+    id<MTLTexture> old = pk->tex;
+    pk->tex = nil;
+    if (old) defer_obj_release(old);
+    uint64_t st;
+    pk->tex = pkg_upload(t, &st, nil);
+    pk->stamp = st;
+    pk->span = nvn_dirty_span(t->mem, t->L.size);
+    pk->seen = nvn_dirty_now();
 }
 
 static int clear_rect_zero(int i);
@@ -2500,7 +2671,9 @@ static id<MTLTexture> tex_mtl_(const tex_t *ct) {
     if (!packaged && !have && DM_GAME_TEX_DIRTY_UPLOAD && t->mem && on_sub_thread()) { int nvn_ft_written(const tex_t *); packaged = nvn_ft_written(t); }   // first use of a texture the CPU wrote since init without a flush (hle_nvn.c)
     if (packaged) {
         NvPkg *pk = [have isKindOfClass:[NvPkg class]] ? have : nil;   // resolved as GPU-only before the CPU wrote it: dropped and rebuilt as packaged
-        if (pk) {   // Already uploaded: check the covered pages only if there has been a guest write since the last check
+        if (pk) {
+            pk->used = g_fence;
+            if (pk->vol || pk->lost) pkg_unpurge(pk, t);
             uint64_t now = nvn_dirty_now();
             int tracked = pk->span != NULL;   // kept from the upload: a texture's pool stays registered while the texture lives
             int clean = tracked && (now == pk->seen || !nvn_dirty_since_span(pk->span, t->mem, t->L.size, pk->stamp));
@@ -2526,6 +2699,7 @@ static id<MTLTexture> tex_mtl_(const tex_t *ct) {
             return pk->view ? pk->view : pk->tex;
         }
         pk = [NvPkg new];
+        pk->used = g_fence;
         pk->sparse = t->pool && nvn_sparse_pool(t->pool); pk->vgen = pk->vseen = nvn_sparse_gen();
         pk->tex = pkg_upload(t, &pk->stamp, nil);
         if (!pk->tex) return nil;
@@ -3453,6 +3627,23 @@ static void shmap_load(void) {
     const char *m = getenv("DM_MSL_DIR");
     // Library directory = <DM_MSL_DIR or default cache>/b-<translation chain version>: the version comes from dm/gfx/nvn/dmsh_chain.h (tools/dmsh_chain.py), one for every game; a host built from an old source tree only accepts libraries of the old version
     g_msl_dir = [NSString stringWithFormat:@"%@/b-%s", m ? @(m) : [NSString stringWithFormat:@"%s%s/build/cache/metal_shader_cache", getenv("DM_ROOT") ?: getenv("HOME"), getenv("DM_ROOT") ? "" : "/dm-work"], DMSH_CHAIN];
+    if (![NSFileManager.defaultManager fileExistsAtPath:g_msl_dir]) {
+        NSString *msl_p = m ? @(m) : nil;
+        if (msl_p) {
+            NSArray<NSString *> *subs = [NSFileManager.defaultManager contentsOfDirectoryAtPath:msl_p error:nil];
+            for (NSString *sub in subs) {
+                if ([sub hasPrefix:@"b-"]) {
+                    NSString *cand = [msl_p stringByAppendingPathComponent:sub];
+                    BOOL isDir = NO;
+                    if ([NSFileManager.defaultManager fileExistsAtPath:cand isDirectory:&isDir] && isDir) {
+                        g_msl_dir = cand;
+                        MLOG("auto-detected shader library directory: %s", g_msl_dir.UTF8String);
+                        break;
+                    }
+                }
+            }
+        }
+    }
     if (![NSFileManager.defaultManager fileExistsAtPath:g_msl_dir]) MLOG("[RED] shader library directory %s does not exist: translation chain version %s of this source tree has not been built yet (dm/gfx/tools/dmsh_build.py)", g_msl_dir.UTF8String, DMSH_CHAIN);
     // The library's stamp (inputs.tsv, written by a full dmsh_build.py run): the game and the digest of the profile inputs it was built from. The chain version is the same for every
     // game and every state of a profile's tables, so the stamp is what ties c1_full.tsv / cb_extent.tsv to these libraries: each names the inputs of the library it was made from
@@ -10826,6 +11017,36 @@ static uint64_t snap_take(const tex_t *t) {
     return g_snap[k].serial;
 }
 static uint64_t present_enqueue(const tex_t *t, double period, const int crop[4], uint64_t ev_val) {
+    static uint32_t s_trim_cnt = 0;
+    if (++s_trim_cnt % 10 == 0) {
+        pthread_mutex_lock(&g_smu);
+#if TARGET_OS_IPHONE
+        uint64_t avail = os_proc_available_memory();
+        if (avail < 250ull * 1024 * 1024) {
+            alias_trim_idle_orphans(2);
+            pkg_evict_sweep(4);
+            pkg_purge_idle(4);
+            defer_drain();
+            malloc_zone_pressure_relief(NULL, 0);
+        } else if (avail < 450ull * 1024 * 1024) {
+            alias_trim_idle_orphans(5);
+            pkg_evict_sweep(15);
+            pkg_purge_idle(15);
+            defer_drain();
+            malloc_zone_pressure_relief(NULL, 0);
+        } else if (avail < 750ull * 1024 * 1024) {
+            alias_trim_idle_orphans(12);
+            pkg_purge_idle(30);
+            defer_drain();
+        } else {
+            alias_trim_idle_orphans(30);
+            pkg_purge_idle(60);
+        }
+#else
+        alias_trim_idle_orphans(60);
+#endif
+        pthread_mutex_unlock(&g_smu);
+    }
     atomic_store(&dm_present_ns, now_ns());
     if (g_classic || atomic_load(&g_present_discard)) return 0;   // Ticket number 0 = no pending present; the swapchain texture acquire does not wait (g_classic: no Metal 4 queue to present on)
     if (t) { xv_check(t->serial, 0, 0, "present"); if (g_xv_npresent < 128) g_xv_present[g_xv_npresent++] = t->serial; }

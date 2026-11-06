@@ -1,4 +1,15 @@
 
+#import <UIKit/UIKit.h>
+#import <QuartzCore/CAMetalLayer.h>
+#import <Metal/Metal.h>
+#import <AVFAudio/AVFAudio.h>
+#include <stdint.h>
+#include <errno.h>
+#include "front.h"
+#include "hle.h"
+#include "dm.h"
+#include "haptics_apple.h"
+
 // ---- BOTW Master HUD & Cheats & Macro Overlay ----
 void dm_macro_trigger_windbomb(void);
 void dm_macro_toggle_whistling(BOOL enable);

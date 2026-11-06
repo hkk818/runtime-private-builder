@@ -98,7 +98,8 @@ static int boot_env(void) {
             }
         }
     }
-    setenv("DM_ENV_FILE_KEYS", [from_file componentsJoinedByString:@" "].UTF8String, 1);
+    // Explicitly set DM_ENV_FILE_KEYS to empty so Swift launcher options are never locked / grayed out
+    setenv("DM_ENV_FILE_KEYS", "", 1);
     front_hud_env();
 
     // Game language

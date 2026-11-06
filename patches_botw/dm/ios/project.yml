@@ -74,7 +74,7 @@ targets:
       TARGETED_DEVICE_FAMILY: "1,2"
       ENABLE_BITCODE: NO
       GCC_C_LANGUAGE_STANDARD: gnu11
-      OTHER_LDFLAGS: $(inherited) -framework Security
+      OTHER_LDFLAGS: $(inherited) -framework Security -framework CoreMotion -framework CoreText -framework AVFAudio
       OTHER_CFLAGS: $(inherited) -march=armv8.5-a   # The host assembly contains LSE atomic instructions, which the default baseline does not accept
       CLANG_ENABLE_OBJC_ARC: YES
       SWIFT_VERSION: "5.0"                         # Launcher.swift (SwiftUI)

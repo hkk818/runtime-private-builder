@@ -653,7 +653,11 @@ jobs:
           mkdir -p "$MSL_IOS/b-$V" "$MSL_IOS/b-670578cbb17a"
           touch "$MSL_IOS/b-$V/inputs.tsv" "$MSL_IOS/b-670578cbb17a/inputs.tsv"
           touch "$MSL_IOS/b-$V/standalone_b.metallib" "$MSL_IOS/b-670578cbb17a/standalone_b.metallib"
-          bash dm/ios/tools/build_ipa.sh "$OUT_IPA"
+          bash dm/ios/tools/build_ipa.sh "$OUT_IPA" || {
+            echo "=== BUILD LOG DUMP ==="
+            cat "$WORK_DIR/build/ios/pkg/build.log" || true
+            exit 1
+          }
 
 
 

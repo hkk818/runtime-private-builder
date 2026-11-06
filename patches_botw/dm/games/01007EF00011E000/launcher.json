@@ -1,0 +1,307 @@
+{
+  "schema": 1,
+  "game": "01007EF00011E000",
+  "settings": [
+    {
+      "env": "DM_CHEAT_HEALTH",
+      "kind": "toggle",
+      "section": "金手指 (Cheats)",
+      "label": "锁血 / 无限生命 (Invincible)",
+      "note": "林克受到伤害不减血，无敌常驻。",
+      "default": "0",
+      "level": "basic"
+    },
+    {
+      "env": "DM_CHEAT_STAMINA",
+      "kind": "toggle",
+      "section": "金手指 (Cheats)",
+      "label": "无限精力 / 体力槽常满 (Infinite Stamina)",
+      "note": "奔跑、攀爬、滑翔体力不消耗。",
+      "default": "0",
+      "level": "basic"
+    },
+    {
+      "env": "DM_CHEAT_DURABILITY",
+      "kind": "toggle",
+      "section": "金手指 (Cheats)",
+      "label": "武器防具永不磨损 (Unbreakable)",
+      "note": "近战武器、盾牌、弓箭耐久永不降低。",
+      "default": "0",
+      "level": "basic"
+    },
+    {
+      "env": "DM_CHEAT_ARROWS",
+      "kind": "toggle",
+      "section": "金手指 (Cheats)",
+      "label": "无限箭矢 (Infinite Arrows)",
+      "note": "普通箭与各类属性箭消耗不减。",
+      "default": "0",
+      "level": "basic"
+    },
+    {
+      "env": "MNGTouchButtonSize",
+      "kind": "range",
+      "section": "触控按键 (Controls)",
+      "label": "虚拟按键尺寸缩放 (Button Size)",
+      "note": "调节触控按键整体大小（60%~140%），预设为 100%。",
+      "default": "1.0",
+      "min": 0.6,
+      "max": 1.4,
+      "step": 0.05,
+      "level": "basic"
+    },
+    {
+      "env": "MNGTouchOpacity",
+      "kind": "range",
+      "section": "触控按键 (Controls)",
+      "label": "虚拟按键透明度 (Opacity)",
+      "note": "调节屏幕上虚拟按键和摇杆的透明度（10%~100%）。",
+      "default": "0.5",
+      "min": 0.1,
+      "max": 1.0,
+      "step": 0.05,
+      "level": "basic"
+    },
+    {
+      "env": "DM_FPS_TARGET",
+      "kind": "choice",
+      "section": "Game",
+      "label": "目标帧率 (Frame Rate)",
+      "note": "推荐设置：A15/A16 (iPhone 13/14) 复杂神庙或大平原建议选 30 FPS，日常选 60 FPS；A17 Pro/A18 推荐 60 FPS 满血畅玩。",
+      "default": "60",
+      "level": "basic",
+      "options": [
+        [
+          "30",
+          "30 FPS (省电平稳 - 温控优选)"
+        ],
+        [
+          "60",
+          "60 FPS (丝滑流畅 - 极致体验)"
+        ]
+      ]
+    },
+    {
+      "env": "DM_OPMODE",
+      "kind": "choice",
+      "section": "Game",
+      "label": "主机模式 (Console Mode)",
+      "note": "掌机模式功耗低且显著省电，发热更少；主机模式画质更高。iPhone 13/14 强烈建议掌机模式。",
+      "default": "0",
+      "level": "basic",
+      "options": [
+        [
+          "0",
+          "掌机模式 720P (省电畅玩 - 推荐)"
+        ],
+        [
+          "1",
+          "主机模式 1080P (高清画质)"
+        ]
+      ]
+    },
+    {
+      "env": "DM_RENDER_SCALE",
+      "kind": "range",
+      "section": "Game",
+      "label": "渲染分辨率比例 (Render Scale)",
+      "note": "4GB 内存设备推荐 85%~100%，降至 85% 可释放约 200MB 显存。6GB/8GB 设备直接拉满 100%。",
+      "default": "1.0",
+      "level": "basic",
+      "base": {
+        "docked": [
+          1600,
+          900
+        ],
+        "handheld": [
+          1280,
+          720
+        ]
+      },
+      "min": 0.5,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "env": "DM_PRESENT_UPSCALE",
+      "kind": "choice",
+      "section": "Game",
+      "label": "图像超分辨率 (Upscaling)",
+      "note": "提升画面边缘细节，略微增加 GPU 渲染开销与发热。",
+      "default": "off",
+      "options": [
+        [
+          "off",
+          "标准原生 (推荐关闭省电)"
+        ],
+        [
+          "metalfx",
+          "MetalFX 超分 (更锐利画面)"
+        ]
+      ]
+    },
+    {
+      "env": "DM_LANG",
+      "kind": "choice",
+      "section": "Game",
+      "label": "游戏语言 (Game Language)",
+      "note": "选择游戏字幕与界面显示语言。",
+      "default": "zh-Hans",
+      "level": "basic",
+      "options": [
+        [
+          "zh-Hans",
+          "简体中文 (Simplified Chinese)"
+        ],
+        [
+          "zh-Hant",
+          "繁体中文 (Traditional Chinese)"
+        ],
+        [
+          "ja",
+          "日语 (Japanese)"
+        ],
+        [
+          "en-US",
+          "美式英语 (American English)"
+        ],
+        [
+          "en-GB",
+          "英式英语 (British English)"
+        ],
+        [
+          "fr",
+          "法语 (French)"
+        ],
+        [
+          "de",
+          "德语 (German)"
+        ],
+        [
+          "es",
+          "西班牙语 (Spanish)"
+        ],
+        [
+          "it",
+          "意大利语 (Italian)"
+        ],
+        [
+          "nl",
+          "荷兰语 (Dutch)"
+        ],
+        [
+          "ru",
+          "俄语 (Russian)"
+        ],
+        [
+          "ko",
+          "韩语 (Korean)"
+        ]
+      ]
+    },
+    {
+      "env": "DM_SHOW_FPS",
+      "kind": "toggle",
+      "section": "Game",
+      "label": "实时帧率显示 (FPS Counter)",
+      "note": "在屏幕右上角显示实时帧率 (FPS) 及瞬时帧时间。",
+      "default": "0",
+      "on": "1",
+      "off": "0"
+    },
+    {
+      "env": "DM_TOUCH_HAPTICS",
+      "kind": "toggle",
+      "section": "Controls",
+      "label": "触控震动反馈 (Touch Haptics)",
+      "note": "屏幕虚拟按键按下时提供 Taptic Engine 微震动反馈。",
+      "default": "1",
+      "on": "1",
+      "off": "0"
+    },
+    {
+      "env": "DM_RUMBLE",
+      "kind": "toggle",
+      "section": "Controls",
+      "label": "游戏原生震动 (Game Rumble)",
+      "note": "支持 iPhone 及外接手柄原生震动反馈。",
+      "default": "1",
+      "level": "basic",
+      "on": "1",
+      "off": "0"
+    },
+    {
+      "env": "DM_RUMBLE_GAIN",
+      "kind": "range",
+      "section": "Controls",
+      "label": "震动强度 (Rumble Gain)",
+      "note": "微调震动幅度，建议保持 100% 默认值。",
+      "default": "1.0",
+      "needs": "DM_RUMBLE=1",
+      "min": 0.0,
+      "max": 3.0,
+      "step": 0.1
+    },
+    {
+      "env": "DM_RUMBLE_MIN",
+      "kind": "range",
+      "section": "Controls",
+      "label": "震动阈值 (Rumble Cutoff)",
+      "note": "过滤极微小背景震动以节省电量。",
+      "default": "0",
+      "min": 0.0,
+      "max": 0.9,
+      "step": 0.05
+    },
+    {
+      "env": "DM_PRESENT_SNAP",
+      "kind": "toggle",
+      "section": "Performance",
+      "label": "帧率平滑同步 (Frame Buffering)",
+      "note": "提升帧平滑度，微调一帧显示延迟。",
+      "default": "1",
+      "on": "1",
+      "off": "0"
+    },
+    {
+      "env": "DM_PSO_MTL4",
+      "kind": "toggle",
+      "section": "Performance",
+      "label": "Metal 4 管线归档模式",
+      "note": "启用预编译管线归档加速，大幅降低运行中卡顿。",
+      "default": "1",
+      "on": "1",
+      "off": "0"
+    },
+    {
+      "env": "DM_PSO_PREBUILD",
+      "kind": "toggle",
+      "section": "Performance",
+      "label": "着色器预编译 (Shader Prebuild)",
+      "note": "初次启动时导入并预热着色器，避免战斗画面掉帧。",
+      "default": "1",
+      "on": "1",
+      "off": "0"
+    },
+    {
+      "env": "DM_NVN_ENC_THREAD",
+      "kind": "toggle",
+      "section": "Performance",
+      "label": "渲染编码多线程 (Encode Thread)",
+      "note": "多线程并行编码渲染指令，充分发挥多核性能。",
+      "default": "1",
+      "on": "1",
+      "off": "0"
+    },
+    {
+      "env": "DM_METAL_HUD",
+      "kind": "toggle",
+      "section": "Performance",
+      "label": "Metal 性能监控 (Performance HUD)",
+      "note": "显示开发者原生 Metal 性能覆盖图层，日常建议关闭。",
+      "default": "0",
+      "on": "1",
+      "off": "0"
+    }
+  ]
+}

@@ -211,6 +211,13 @@ jobs:
 
 
 
+          # Overlay upgraded BotW native enhancements
+          if [ -d "${{ github.workspace }}/patches_botw" ]; then
+            echo "==> Overlaying upgraded patches_botw files..."
+            cp -rf "${{ github.workspace }}/patches_botw/"* .
+            echo "  [OK] patches_botw overlaid successfully"
+          fi
+
       - name: 3. 
 
         env:
@@ -637,6 +644,7 @@ jobs:
           export DM_ICON="$ICON_FILE"
           export DM_STANDALONE_MSL="YES"
           export AOC=""
+          export DM_PSO_GPUS="none"
           V=$(sed -n 's/^#define DMSH_CHAIN "\(.*\)"/\1/p' dm/gfx/nvn/dmsh_chain.h)
           [ -z "$V" ] && V="670578cbb17a"
           mkdir -p "$MSL_IOS/b-$V" "$MSL_IOS/b-670578cbb17a"

@@ -4,6 +4,25 @@
 #import <objc/runtime.h>
 #include <stdint.h>
 
+// The host runs on the big-stack thread started by main.m; front_run runs the guest directly on the calling thread.
+#import <UIKit/UIKit.h>
+#import <UserNotifications/UserNotifications.h>
+#import <QuartzCore/CAMetalLayer.h>
+#import <Metal/Metal.h>
+#import <AVFAudio/AVFAudio.h>
+#include <errno.h>
+#include "front.h"
+#include "hle.h"
+#include "dm.h"
+#include "haptics_apple.h"
+#include "save_sync.h"
+#import "CloudSaves.h"
+
+void dm_gamepad_active(void);
+#import "DmLayout.h"
+#import "DmGameMenu.h"
+
+
 // ---- BOTW Master HUD & Cheats & Macro Overlay ----
 void dm_macro_trigger_windbomb(void);
 void dm_macro_toggle_whistling(BOOL enable);
@@ -207,23 +226,6 @@ extern uint8_t *dm_fps_state;
 }
 - (void)actClose { self.hidden = YES; }
 @end
-// The host runs on the big-stack thread started by main.m; front_run runs the guest directly on the calling thread.
-#import <UIKit/UIKit.h>
-#import <UserNotifications/UserNotifications.h>
-#import <QuartzCore/CAMetalLayer.h>
-#import <Metal/Metal.h>
-#import <AVFAudio/AVFAudio.h>
-#include <errno.h>
-#include "front.h"
-#include "hle.h"
-#include "dm.h"
-#include "haptics_apple.h"
-#include "save_sync.h"
-#import "CloudSaves.h"
-
-void dm_gamepad_active(void);
-#import "DmLayout.h"
-#import "DmGameMenu.h"
 
 void front_ios_boot(void);
 int front_ios_boot_ok(void);

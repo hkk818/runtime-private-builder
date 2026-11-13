@@ -1403,7 +1403,7 @@ static void pkg_evict_sweep(uint64_t max_idle_fences);"""
             raise AssertionError("Upload loop block not found in nvn_mtl.m")
 
     # 4.1 Memory leak sweep: auto-evict unreferenced orphan textures from g_alias
-    if "alias_trim_idle_orphans" not in mtl_s:
+    if "alias_trim_idle_orphans" not in mtl_s and "pkg_purge_idle" not in mtl_s:
         old_after_takeover = """    if (n) { g_ser_gen++; g_alias_taken += n; }
 }"""
         new_after_takeover = """    if (n) { g_ser_gen++; g_alias_taken += n; }
@@ -1835,7 +1835,7 @@ static uint64_t hostseg_cap(void) {
         with open(front_ios_path, "r", encoding="utf-8") as f:
             front_s = f.read().replace('\r\n', '\n')
         if "DM_DOUBLE_BUFFER" not in front_s:
-            old_layer = "l.contentsScale = UIScreen.mainScreen.nativeScale; l.framebufferOnly = NO; l.opaque = YES;"
+            old_layer = "l.contentsScale = MAX(self.traitCollection.displayScale, 1); l.framebufferOnly = NO; l.opaque = YES;"
             new_layer = """l.contentsScale = UIScreen.mainScreen.nativeScale; l.framebufferOnly = NO; l.opaque = YES;
         const char *db = getenv("DM_DOUBLE_BUFFER");
         if (!db || atoi(db) != 0) {

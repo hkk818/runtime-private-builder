@@ -4063,7 +4063,7 @@ static void pkg_unpurge(NvPkg *pk, const tex_t *t) {
     pk->tex = nil;
     if (old) defer_obj_release(old);
     uint64_t st;
-    pk->tex = pkg_upload(t, &st, nil);
+    pk->tex = pkg_upload(t, &st, nil, 0, nil, NULL, 0, NULL);   // upstream's new pkg_upload takes 8 args; this is a fresh re-upload (old texture already released), same shape as the fresh-upload call below
     pk->stamp = st;
     pk->span = nvn_dirty_span(t->mem, t->L.size);
     pk->seen = nvn_dirty_now();
@@ -6196,7 +6196,6 @@ static id<MTLLibrary> lib_from_file(NSString *path, NSError **err) {
     if (se && se->offset + se->size <= g_spak_len) {
         const void *bytes = g_spak_data + se->offset;
         size_t len = (size_t)se->size;
-        t_lib_layer = memmem(bytes, len, "render_target_array_index", 25) != NULL;
         dispatch_data_t d = dispatch_data_create(bytes, len, dispatch_get_main_queue(), ^{});
         id<MTLLibrary> lib = [g_dev newLibraryWithData:d error:err];
         if (lib) return lib;
